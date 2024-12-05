@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -14,65 +16,117 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var answer int64
-	table := make([][]string, 0)
 	scanner := bufio.NewScanner(file)
+
+	readRule := true
+	pageRule := make(map[int64][]int64)
+	pages := make([][]int64, 0)
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		table = append(table, strings.Split(line, ""))
-	}
-
-	for i, line := range table {
-		for j, cell := range line {
-			if cell == "X" {
-				answer += int64(check(i, j, table))
-			}
+		if line == "" {
+			readRule = false
+			continue
 		}
+		if readRule {
+			pageRule, err = parsePageRule(line, pageRule)
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			parsedPages, err := parsePages(line)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pages = append(pages, parsedPages)
+		}
+	}
+	log.Printf("pageRule size: %d, pages size: %d\n", len(pageRule), len(pages))
+
+	filteredPages := filterPages(pageRule, pages)
+	log.Printf("filteredPages size: %d\n", len(filteredPages))
+
+	answer, err := sumCenterPageNumber(filteredPages)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	fmt.Printf("Answer: %d\n", answer)
 }
 
-func check(i, j int, table [][]string) int {
-	answer := 0
-	// 上方向チェック
-	if i >= 3 && table[i-1][j] == "M" && table[i-2][j] == "A" && table[i-3][j] == "S" {
-		answer++
+func parsePageRule(line string, pageRule map[int64][]int64) (map[int64][]int64, error) {
+	arr := strings.Split(line, "|")
+	if len(arr) != 2 {
+		return nil, fmt.Errorf("invalid line: %v", line)
 	}
 
-	// 下方向チェック
-	if len(table) >= i+4 && table[i+1][j] == "M" && table[i+2][j] == "A" && table[i+3][j] == "S" {
-		answer++
+	left, err := strconv.ParseInt(arr[0], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid left number: %v", arr[0])
+	}
+	right, err := strconv.ParseInt(arr[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid right number: %v", arr[1])
 	}
 
-	// 左方向チェック
-	if j >= 3 && table[i][j-1] == "M" && table[i][j-2] == "A" && table[i][j-3] == "S" {
-		answer++
+	pageRule[left] = append(pageRule[left], right)
+
+	return pageRule, nil
+}
+
+func parsePages(line string) ([]int64, error) {
+	arr := strings.Split(line, ",")
+
+	var pages []int64
+	for _, page := range arr {
+		pageNum, err := strconv.ParseInt(page, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid page number: %v", page)
+		}
+		pages = append(pages, pageNum)
 	}
 
-	// 右方向チェック
-	if len(table[i]) >= j+4 && table[i][j+1] == "M" && table[i][j+2] == "A" && table[i][j+3] == "S" {
-		answer++
-	}
+	return pages, nil
+}
 
-	// 左斜め上方向チェック
-	if i >= 3 && j >= 3 && table[i-1][j-1] == "M" && table[i-2][j-2] == "A" && table[i-3][j-3] == "S" {
-		answer++
+func filterPages(pageRule map[int64][]int64, pages [][]int64) [][]int64 {
+	var filteredPages [][]int64
+	for _, pageLine := range pages {
+		allOK := true
+		for i, page := range pageLine {
+			if i == 0 {
+				continue
+			}
+			if !checkPageRule(pageRule[page], pageLine[:i]) {
+				allOK = false
+				break
+			}
+		}
+		if allOK {
+			filteredPages = append(filteredPages, pageLine)
+		}
 	}
+	return filteredPages
+}
 
-	// 左斜め下方向チェック
-	if len(table) >= i+4 && j >= 3 && table[i+1][j-1] == "M" && table[i+2][j-2] == "A" && table[i+3][j-3] == "S" {
-		answer++
+func checkPageRule(pageRule []int64, inputedPages []int64) bool {
+	for _, rule := range pageRule {
+		if slices.Contains(inputedPages, rule) {
+			return false
+		}
 	}
+	return true
+}
 
-	// 右斜め下方向チェック
-	if len(table) >= i+4 && len(table[i]) >= j+4 && table[i+1][j+1] == "M" && table[i+2][j+2] == "A" && table[i+3][j+3] == "S" {
-		answer++
-	}
+func sumCenterPageNumber(pages [][]int64) (int64, error) {
+	var sum int64
+	for _, pageLine := range pages {
+		if len(pageLine)%2 == 0 {
+			return 0, fmt.Errorf("invalid page line: %v", pageLine)
+		}
 
-	// 右斜め上方向チェック
-	if i >= 3 && len(table[i]) >= j+4 && table[i-1][j+1] == "M" && table[i-2][j+2] == "A" && table[i-3][j+3] == "S" {
-		answer++
+		centerIndex := len(pageLine) / 2
+		sum += pageLine[centerIndex]
 	}
-	return answer
+	return sum, nil
 }
